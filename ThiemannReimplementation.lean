@@ -10,7 +10,7 @@ open Type'
 
 -- inductive Session (n : Nat) where
 -- difference n after or before colon
-inductive Session : (n : Nat) -> Type  where
+inductive Session : (n : Nat) -> Type where
   | _! : Type' -> Session n -> Session n
   | _? : Type' -> Session n -> Session n
   | end' : Session n
@@ -28,7 +28,6 @@ def unaryp (s : Session n) : Session n := _? int $ _! int s
     -- | 0 => unaryp $ _' (Fin.mk 0)
     -- | 1 => end'
 
-    
 def manyUnaryp : Session 0 := 
     μ (externalChoice ( fun (i : Fin 2) => match i with
         | 0 => unaryp $ _' 0
@@ -44,15 +43,15 @@ def manyUnaryp : Session 0 :=
 -- def ari := _
 
 
--- def dual
-    -- | _! t s => _? t $ dual s
-    -- | _? t s => _! t $ dual s
-    -- | end' => end'
-    -- | internalChoice sessionSelector => externalChoice (fun label => dual $ sessionSelector label)
-    -- | externalChoice sessionSelector => internalChoice (fun label => dual $ sessionSelector label)
-
-
--- #check dual unaryp
+def dual (session : Session n) : Session n := match session with
+    | _! t s  => _? t $ dual s
+    | _? t s => _! t $ dual s
+    | end' => end'
+    | internalChoice sessionSelector => externalChoice (fun label => dual $ sessionSelector label)
+    | externalChoice sessionSelector => internalChoice (fun label => dual $ sessionSelector label)
+    | μ body => μ $ dual body
+    | _' i => _' i
+def test : Session 0 := dual $ unaryp end' 
 
 abbrev Type'.de
     | int => Int
@@ -82,6 +81,10 @@ inductive Cmd (State : Type) : (n : Nat) -> Session n -> Type
                       Cmd State n (internalChoice SessionSelector)
     | loop : Cmd State (n + 1) Body -> Cmd State n (μ Body)
     | continue' : (i : Fin n) -> Cmd State n (_' i) 
+    | unroll : 
+        Cmd State (n + 1) ContSession ->
+            Cmd State n (μ ContSession) ->
+                Cmd State n (μ ContSession)
 open Cmd
 
 def addupCommand (cmd : Cmd Int n s) : Cmd Int n (unaryp s) :=
@@ -93,9 +96,21 @@ def runningSumCommand : Cmd Int 0 manyUnaryp :=
         choice fun (i : Fin 2) => match i with
             | 0 => addupCommand (continue' 0)
             | 1 => close
-
-
-
+          
+def runningSumClient : Cmd Int 0 (dual manyUnaryp) :=
+    unroll (
+        select 0 $ 
+        send (fun x => (x, 17)) $
+        recv (fun payload _ => payload) $ 
+        continue' 0) $
+    unroll (
+        select 0 $ 
+        send (fun x => (x, 4)) $
+        recv (fun payload _ => payload) $ 
+        continue' 0) $
+    loop (select 1 close)
+                        
+ 
 
 -- def negateServer : Cmd Int (_? int end') :=
     -- recv (fun payload state => payload) close
@@ -160,7 +175,7 @@ def runningSumCommand : Cmd Int 0 manyUnaryp :=
                 -- let cmd := getCmd label
                 -- exec chApi cmd state' ch
 -- 
--- 
+
 -- def boolToF2 (b : Bool) : Fin 2 := match b with
     -- | false => 0
     -- | true => 1
