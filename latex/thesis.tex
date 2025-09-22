@@ -135,7 +135,7 @@ s
 \section{Motivation}
 s
 \section{Overview}
-s
+
 
 
 
@@ -143,17 +143,22 @@ s
 
 
 \chapter{Thiemann}
-t
+
+
+Session types usually require your programming language of choice to support a linear type system where every variable can only be used once. It is possible to implement session types in any programming language but checking linearity at compile time is hard and therefore often omitted. Checking it at runtime defeats the purpose. This is problematic for adoption in general programming languages. [Thiemann] presents a functional programming language which uses a novel way to represent session types. They use callbacks just like in web programming. After every function you call you also have to provide the continuation of your program which decides what happens with the result value of the function. By nesting this procedure, you can write arbitrary programs.
+
 
 \chapter{Proof of Deadlock-Freedom}
+An open task of [ChorLean] is to show that it is free of deadlocks. They already sketched a proof but a full proof would be nice. [There are multiple possibilities.]
+
 \section{cgraphs}
+[Thiemann] suggested that it could be proven using [interaction trees]. We investigated this and found [cgraphs] which sounded promising. Unfortunately it is written in Coq which we are not exactly familiar with. Furthermore, it turns out that a simple example proof using [cgraphs] is 1500 lines of code long and consists of \emph{very} dense code. [Other] possibilities turned out to have similar problems.
 
 
 \chapter{ChorLean}
 \section{Group Chat (dynamic roles)}
 t
-
-\chapter{Exceptions}
+\section{Exceptions}
 e
 
 
