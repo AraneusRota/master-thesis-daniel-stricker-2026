@@ -171,57 +171,84 @@
 %For more information on class options and usage have a look at the documentation \cite{tuda-ci}.
 
 \abstract{Abstract}
+In this work we explore programming languages and their features in the context of distributed programming. We first explore session types which promise to proof correct communication between peers. Another paradigm which promises a similar feat is choreographic programming. We inspect ChorLean, a \chorlang{} which uses a dependent type system to add even more guarantees than other \chorlangs{}. We try to extend it with more features and trying to prove its deadlock freedom. We explore the fundamental differences between \chorlangs{} and multitier programming. Furthermore we look into which alternative \chorlangs{} exist and we find an interesting language \lambdax{} which promises to build a common ground for all state of the art \chorlangs{}. The only missing piece: A mechanization, which we try to implement and to even extend it using a dependent type system.  
 
-
+\IMRADlabel{introduction}
 \chapter{Introduction}
-s
-s
-\section{Motivation}
-s
-\section{Overview}
+Distributed systems are important and hard to master. Choreographic programming was established to help and an alternative are session types.  
 
-\todo{Much more detail} Distributed systems are important and hard to master. Choreographic programming was established to help and an alternative are session types.  
+As it turns out, many goals we set ourselves or possible solutions we tried to find, turned out to be either impossible or unfeasible. We had no other option than to shift our focus and goals as needed. Therefore, this work also represents all our attempts and shifts. All of our code is published publicly on GitHub\cite{mycode}. Even though we could unfortunately not find a solution to any single big problem, we think that the main contribution of our work is to show the feasibility or infeasibility of multiple adjacent smaller problems. This could serve as a base to inspire further research especially because we try to serve as an introduction into choreographic programming, session types, ChorLean and multiple other distinct programming languages in this space, all with unique viewpoints. Another goal of  To get a broader view of choreographic languages and to have better comparison.
 
-As it turns out, many goals we set ourselves or possible solutions we tried to find, turned out to be either impossible or unfeasible. We had no other option than to shift our focus and goals as needed. Therefore, this work also represents all our attempts and shifts. All of our code is published publicly on GitHub\cite{mycode}. Even though we could unfortunately not find a solution to any single big problem, we think that the main contribution of our work is to show the feasibility or infeasibility of multiple adjacent smaller problems. This could serve as a base to inspire further research especially because we try to serve as an introduction into choreographic programming, session types, ChorLean and multiple other distinct programming languages in this space, all with unique viewpoints. 
+\chapter{Session Types}
 
-
-
-
-
-
-
-not only simplified a previously complicated
-
-Another goal of  To get a broader view of choreographic languages and to have better comparison and more 
-
-\chapter{Background knowledge (High level)}
-
-\section{Session Types}
 The original goal of this work was to find a way to combine session types and choreographic programming. To possibly achieve this, one has to understand the in and outs of both. This is made much harder because both are state-of-the-art research topics each with its own variations, challenges and other intricacies. As you will find out we had to shift goals regularly while doing this work. In our opinion this work is a perfect starting point for further research
 
 Session types\cite{10.1145/3547638, 10.1145/3591277, 10.1145/3290341} usually require your programming language of choice to support a linear type system where every variable can only be used once. It is possible to implement session types in any programming language but checking linearity at compile time is hard and therefore often omitted. Checking it at runtime defeats the purpose. This is problematic for adoption in general programming languages. Thiemann\cite{thiemann2023intrinsicallytypedsessionscallbacks} presents a functional programming language which uses a novel way to represent session types. They use callbacks just like in web programming. After every function you call you also have to provide the continuation of your program which decides what happens with the result value of the function. By nesting this procedure, you can write arbitrary programs.
 
-\section{Choreos}
-\section{Dependent types und Lean (nur, wenn man es später noch braucht)}
+We will implement Thiemann's\cite{thiemann2023intrinsicallytypedsessionscallbacks} session types using Lean to possibly combine them with the existing \chorlang{} ChorLean:
+\begin{lstlisting}
+inductive Type'
+  | int : Type'
+  | bool : Type'
 
+inductive Session
+  | _! : Type' -> Session -> Session
+  | _? : Type' -> Session -> Session
+  | end' : Session
+  | internalChoice : (Fin k -> Session) -> Session
+  | externalChoice : (Fin k -> Session) -> Session
+open Session
+\end{lstlisting}
+First we have to define some primitive data types for our language to be based on (lines 1--3). The main part is the inductive \lstinline{Session} definition. With session types we want to define a protocal of communication which is statically always fulfilled. One could think about which communication primitives exist. The initial logical choice is send and receive.
 
+We will start with exactly them, \lstinline{_!} (send) in line 6 and \lstinline{_?} (receive) in line 7. They have two parameters each. First the type of the data to be sent/received and another session which acts as a continuation. Thiemann's main achievement is to abuse continuations. The thing is that for session types you have to guarantee that every session is only accessed once which can also be called a linear type system. Designing session types with a linear type system is hard and some languages don't even support linear type systems. Turns out continuations fullfill the same goal and are more often supported than linear type systems.
 
+This is also called continuation passing style and means that after every operation we have to pass the next opeartion the function we called. The function usually does not return normally but instead calls the continuation with its result.
 
-\chapter{Thiemann}
-\section{Show Lean implementation}
+To end this unending cycle we introduce \lstinline{end'} (line 8) which is used as a continuation when we do not want futher operations to happen.
 
+The problem is we cannot change flow of our program yet we can only statically send or receive as often as we want. Therefore, we add \lstinline{internalChoice} (line 9) and \lstinline{externalChoice} (line 10). \lstinline{internalChoice} means that we do some computation which produces a number of type \lstinline{Fin k} which we then send to our communication partner. He then executes the expression with the \lstinline{Session} type that is returned by the function which is passed to its \lstinline{externalChoice} counterpart. 
+
+Let us look at a small example:
+\begin{lstlisting}
+def server := _? int $ _? int $ _! int end'
+def client := dual server
+
+def equivalentClient := _! int $ _! int $ _? int end'
+
+\end{lstlisting}
+\lstinline{binary} is a session type which represents a server which receives an \lstinline{int} and then another \lstinline{int}. Then it (no necessarily) does some operation on those two arguments and sends the result back. Then the session ends.
+
+A direct communication parter's session can easily be generated automatically with a \lstinline{dual} function which just recursively flips sends/receives and \lstinline{internalChoice}/\lstinline{externalChoice}:
+
+\begin{lstlisting}
+def dual
+    | _! t s => _? t $ dual s
+    | _? t s => _! t $ dual s
+    | end' => end'
+    | internalChoice sessionSelector => 
+        externalChoice (fun label => dual $ sessionSelector label)
+    | externalChoice sessionSelector => 
+        internalChoice (fun label => dual $ sessionSelector label)
+\end{lstlisting}
+
+We also added loops and recursion which makes everything more complicate. Unfortunately we could not reach our goal of combining session types with ChorLean. ChorLean's viewpoint of its distributed code is just too different. ChorLean takes a global viewpoint from the top where we only need a \lstinline{com} primitive at one place which handles sending and receiving at the same time. 
+
+Session types are fundamentally built to model one side of a communication. It is possible to generate the other side by using functions like \lstinline{dual} but fundamentally a session type only represents one side which is not compatible with \chorlangs.
+
+\IMRADlabel{methods}
 \chapter{ChorLean}
 
-Let us now focus on choreographic programming\cite{Shen_2023, }. Our base is the choreographic programming language ChorLean\cite{chorleanpaper, chorleanrepo} because we have convenient first-hand access to the developers of it. They have a deep understanding of the source code which was a massive help to kick-start further research on ChorLean specifically and the topic at large. This is one of the reasons why our first goal was to find a way to extend ChorLean with session types. As it will turn out later, according to our knowledge this is impossible. This work also serves as an introduction to ChorLean because as of our knowledge there currently exists no other public documentation or introduction for it. We think that an introduction especially to ChorLean is paramount for the further development of \chorlangs{} and to showcase more real life use cases of dependent programming languages. We hope this could inspire further developments of existing solutions or possibly completely new ideas by getting a new perspective on the solution space of dependent programming languages \todo{maybe move to motivation or end}.   
+Let us now focus on choreographic programming\cite{Shen_2023}. Our base is the choreographic programming language ChorLean\cite{chorleanpaper, chorleanrepo} because we have convenient first-hand access to the developers of it. They have a deep understanding of the source code which was a massive help to kick-start further research on ChorLean specifically and the topic at large. This is one of the reasons why our first goal was to find a way to extend ChorLean with session types. As it will turn out later, according to our knowledge this is impossible. This work also serves as an introduction to ChorLean because as of our knowledge there currently exists no other public documentation or introduction for it. We think that an introduction especially to ChorLean is paramount for the further development of \chorlangs{} and to showcase more real life use cases of dependent programming languages. We hope this could inspire further developments of existing solutions or possibly completely new ideas by getting a new perspective on the solution space of dependent programming languages.   
 
-\section{Explain choreographic programming}
+\section{Choreographic programming}
 Distributed programming poses unique challenges. Specifically deadlocks are a unique threat when communication between peers has to be managed. One way to (usually provably) get rid of this whole class of problems is by using a \chorlang{}. Instead of writing a program for each peer, you instead write one central program where the placement of tasks or data to specific peers is part of the programming language. With this you implicitly define a communication protocol. Because your code defines the protocol, it trivially fulfills the protocol. Your central code is then automatically compiled into separate programs for each peer. If you can prove that your \chorlang{} of choosing is correct then you are guaranteed to never get deadlocks. But this proof even though you only have to do it once is not a trivial endeavour. In fact, many \chorlangs{} are just implemented without any backing proof or even a proof sketch.
 
-\section{Explain dependent types and Lean}
+\section{Lean and dependent types}
 Manually writing a proof for a \chorlang{} would surely be the best solution, but we can use another tool which gets us multiple advantages. This tool is a dependent type system. Most widely known \chorlangs{} use normal type systems. Turns out that normal type systems are more limited and limit the possible guarantees communication safety. You know what kind of data to expect but modelling from whom you get the data at type level is just impossible. Therefore, you have to implement this logic by yourself. This will usually happen at runtime. Except if you prove your code rigorously then you won't get any guarantees that your logic is correct and as everyone knows, bugs can happen. For some tasks want to have these better guarantees.
 With a dependent type system, we can encode the location of data into our types. As long as the type system is to be trusted we then have a very good guarantee that we always know who our next communication partner is. Unfortunately, this also isn't a full guarantee because what if the types we wrote are faulty? But it is already a big step in the correct direction.
 
-\section{Explain language/implementation, show example}
+\section{Implementation}
 
 Let us look at an example where we implement an online rock paper scissors game using ChorLean. We will use this as an introduction to ChorLean specifically but also to the programming language Lean and moreover how \chorlangs{} work generally. Instead of writing two separate programs, we can write one program which contains the logic for both players (one of the biggest advantages of \chorlangs{}). Player 1 will act as a kind of server because the winner is decided on his side. We could have easily added an intermediary server, but we omitted it for simplicity’s sake. The following listing contains the most important part of the implementation, the \lstinline{play} function, with auxiliary code omitted: 
 
@@ -258,11 +285,9 @@ Now we have to decide who is the winner. We do this, as stated before, at player
 
 Player 1 now knows who won the game. The winner is saved in \lstinline{gameResultLocated}. This value would again be located only at \lstinline{Player1}. Therefore, we share it with \lstinline{Player2} using the operator \lstinline{>>=} in line 14 which is just a shorter way to write \lstinline{com} (as in line 9). \lstinline{gameResultLocated} is located at both players and then unpacked at line 15 so that both players can access the value. 
 
-The last step in lines 17--18 is to print a message informing each play if they have won or lost. The result of these two lines is not needed. Therefore, we save them into \lstinline{_} which is a throwaway name. We have to select a name because else it would not be integrated into the wrapping monad. But these details are not important for this section. At last, we return the game result to the calling function in line 20. We do this to possibly call \lstinline{play} again if this game resulted in a draw. This also shows that choreographies like the function \lstinline{play} are just pure functions and can be reused or take parameters like usual to change behaviour. This is possible because we are using monads to wrap any side effects that occur in this code. In fact, Lean is a pure functional programming language which means that this is the only way to represent side effects. With this we have seen how \chorlangs{} are usually structured from the perspective of a library user but there are multiple characteristics which are unique for pure functional languages and even more specifically for dependent programming languages. We have already mentioned some guarantees we get, but later we will compare ChorLean to other \chorlangs{} to make the distinct features more clear. \todo{do we?} 
+The last step in lines 17--18 is to print a message informing each play if they have won or lost. The result of these two lines is not needed. Therefore, we save them into \lstinline{_} which is a throwaway name. We have to select a name because else it would not be integrated into the wrapping monad. But these details are not important for this section. At last, we return the game result to the calling function in line 20. We do this to possibly call \lstinline{play} again if this game resulted in a draw. This also shows that choreographies like the function \lstinline{play} are just pure functions and can be reused or take parameters like usual to change behaviour. This is possible because we are using monads to wrap any side effects that occur in this code. In fact, Lean is a pure functional programming language which means that this is the only way to represent side effects. With this we have seen how \chorlangs{} are usually structured from the perspective of a library user but there are multiple characteristics which are unique for pure functional languages and even more specifically for dependent programming languages. We have already mentioned some guarantees we get. 
 
-Getting deep into the implementation of ChorLean is out of scope for this work, but we will showcase the central type \lstinline{Choreo} because looking at its declaration already gives us deep insight into how some unique features of \lstinline{ChorLean} work. Here is the declaration:
-
-\todocite{code from ChorLean}
+Getting deep into the implementation of ChorLean is out of scope for this work, but we will showcase the central type \lstinline{Choreo} because looking at its declaration already gives us deep insight into how some unique features of \lstinline{ChorLean} work. Here is the declaration (code from ChorLean\cite{chorleanrepo}):
 \begin{lstlisting}[mathescape]
 inductive Choreo:
   (census: List Role) ->
@@ -272,7 +297,7 @@ inductive Choreo:
   Type 1
 \end{lstlisting}
 
-The type definition directly shows us the most important parts of ChorLean and how it uses Lean's dependent type system. Every choreography (i.e.\ mostly all the code) is of type \lstinline{Choreo}. Let us go through all type parameters one by one. \lstinline{census} (line 2) is a very important one here. It is a list of \lstinline{Role}. \lstinline{Role} is strictly speaking an arbitrary type but for the sake of simplicity let us think of it as a simple enum with one value for every possible participant. Note that we have to statically know all possible participants in advance which turns out is an interesting and important restriction. More on that later \todo{add more later}. 
+The type definition directly shows us the most important parts of ChorLean and how it uses Lean's dependent type system. Every choreography (i.e.\ mostly all the code) is of type \lstinline{Choreo}. Let us go through all type parameters one by one. \lstinline{census} (line 2) is a very important one here. It is a list of \lstinline{Role}. \lstinline{Role} is strictly speaking an arbitrary type but for the sake of simplicity let us think of it as a simple enum with one value for every possible participant. Note that we have to statically know all possible participants in advance which turns out is an interesting and important restriction. 
 
 The two executables which are generated by \lstinline{ChorLean} for both locations are equivalent. The difference in behaviour is distinguished by identifying who the \lstinline{target} (line 3) or in other words the executor of this program is. This is usually done by passing a parameter to the executable. For example let \lstinline{rock-paper-scissors} be our executable, and we want to start the program for player 1:
 \begin{lstlisting}
@@ -284,27 +309,22 @@ This is, so the program can decide which role to assume in the code. \lstinline{
 if value.owner != target then
     throwTypeError
 \end{lstlisting}
-This is possible because Lean supports dependent types. We say \lstinline{Choreo} depends on the value \lstinline{target}. Think of it like \lstinline{target} being just another value of your program and not a type but \lstinline{Choreo} can access this value at compile time and alter its behaviour accordingly. The whole implementation of ChorLean is based on this fact. In line 1 we can check if the target (i.e.\ the executor of the program) as provably access to the value. Remember that this code is executed at compile time and throws a type error before the program is even started. Getting this kind of power is nowhere near free. \emph{Provably} is the key term here. The compiler cannot always proof everything we want from it by itself. This is the reason why throughout the implementation code of ChorLean the authors often have to show the compiler manually that some fact are always true by writing proofs. Luckily, Lean is also a very capable theorem prover \todocite{Lean} which helps a lot in this process. Being obligated to understand and write sometimes non-trivial proofs is in our opinion the biggest disadvantage of ChorLean when you want to write non-trivial programs or have to extend some additional functionality in ChorLean. 
+This is possible because Lean supports dependent types. We say \lstinline{Choreo} depends on the value \lstinline{target}. Think of it like \lstinline{target} being just another value of your program and not a type but \lstinline{Choreo} can access this value at compile time and alter its behaviour accordingly. The whole implementation of ChorLean is based on this fact. In line 1 we can check if the target (i.e.\ the executor of the program) as provably access to the value. Remember that this code is executed at compile time and throws a type error before the program is even started. Getting this kind of power is nowhere near free. \emph{Provably} is the key term here. The compiler cannot always proof everything we want from it by itself. This is the reason why throughout the implementation code of ChorLean the authors often have to show the compiler manually that some fact are always true by writing proofs. Luckily, Lean is also a very capable theorem prover which helps a lot in this process. Being obligated to understand and write sometimes non-trivial proofs is in our opinion the biggest disadvantage of ChorLean when you want to write non-trivial programs or have to extend some additional functionality in ChorLean. 
 
 The next parameter \lstinline{proof_target_in_census} (line 4) is not exactly very complicated to understand but in our opinion shows the disadvantages of needing to always have a proof for everything. This parameter represents a proof that shows that \lstinline{target} is indeed part of the \lstinline{census}. Proving this is not especially hard, but it is cumbersome that such a parameter has to exist in the first place. This is very representative for the multitude of proofs one has to pass and keep around in the implementation code of ChorLean.     
 
 \lstinline{expressionType} (line 5) just declares which kind of expression is returned by this specific \lstinline{Choreo}. This is to guarantee that not only the location of every value is known at every time but also the expression type like we are used to. Think of a type like \lstinline{String} at that place for example.  Line 6 basically just says that \lstinline{Choreo} is a type which depends on other types but this is not essential for our understanding here.
 
-\todo{atomic Choreo operations}
-
-
-    \subsection{Type and effect safety}
-
-\section{Add Exceptions with 2 phase protocol (sketch)?}
+\section{Exceptions}
 We also tried to add exceptions to ChorLean. For this we have researched multiple solutions\cite{graversen2025promisingfutureomissionfailures, 10.1145/2804302.2804319, keizer2023implementing} but none were a fit or were out of scope. Instead of exceptions, we implemented a 2-phase-commit protocol\cite{10.1145/7239.7266} by hardcoding a \lstinline{Coordinator} role which acts as a middleman for all communication and communicates rollbacks to all peers. This was not successful either. Even if successful it would have only solved a limited amount of failures. If the coordinator crashes no rollbacks are possiblel.   
 
 
-\section{Group chat + Multitier and Choreographic}
-In our opinion to understand the ins and outs of a library or topic in general we also have to understand alternatives which solve the same problems. A solution never exists in a vacuum. Another solution which also makes it possible to write one program for multiple locations is called multitier programming. We specifically take a look at ScalaLoci \todocite{}. We want to give a comparison to \chorlangs{} and specifically ChorLean. Keep in mind that we are comparing from the perspective of ChorLean and therefore can give more details on ChorLean and give more surface level intuition about ScalaLoci to keep an acceptable scope. 
+\section{Group chat}
+In our opinion to understand the ins and outs of a library or topic in general we also have to understand alternatives which solve the same problems. A solution never exists in a vacuum. Another solution which also makes it possible to write one program for multiple locations is called multitier programming. We specifically take a look at ScalaLoci\cite{scalaloci}. We want to give a comparison to \chorlangs{} and specifically ChorLean. Keep in mind that we are comparing from the perspective of ChorLean and therefore can give more details on ChorLean and give more surface level intuition about ScalaLoci to keep an acceptable scope. 
 
-We implemented some examples in ScalaLoci by ourselves similar to our rock paper scissors with ChorLean. Another example program we were interested in was a group chat application where participants can freely start a program to join and leave group chats to send messages. At first, there was no specific reason why we wanted to implement this. This was also a rather trivial example to implement \todocite{link group chat GitHub} with ScalaLoci. Nonetheless, we found this example rather interesting because it was so nicely interactive. 
+We implemented some examples in ScalaLoci by ourselves similar to our rock paper scissors with ChorLean. Another example program we were interested in was a group chat application where participants can freely start a program to join and leave group chats to send messages. At first, there was no specific reason why we wanted to implement this. This was also a rather trivial example to implement\cite{mycode} with ScalaLoci. Nonetheless, we found this example rather interesting because it was so nicely interactive. 
 
-Hence, we tried implementing it in ChorLean. We quickly found out that the previously trivial problem was now a big task. At first, we thought that because of the different exposed API of ScalaLoci and ChorLean this problem was just harder to express in ChorLean. The main problem was that the \lstinline{Choreo} type of ChorLean has a type parameter \lstinline{census} as we have seen before \todo{link listing?}. This parameter has to be set to a list of all possible communication members. This has to be known statically which is the main problem. With a group chat it must be possible that an indefinite amount of users can be added or left. Moreover, when starting the ChorLean executable you have to decide which specific role out of the list of possible roles you are. But how would you even know which roles are already taken? 
+Hence, we tried implementing it in ChorLean. We quickly found out that the previously trivial problem was now a big task. At first, we thought that because of the different exposed API of ScalaLoci and ChorLean this problem was just harder to express in ChorLean. The main problem was that the \lstinline{Choreo} type of ChorLean has a type parameter \lstinline{census} as we have seen before. This parameter has to be set to a list of all possible communication members. This has to be known statically which is the main problem. With a group chat it must be possible that an indefinite amount of users can be added or left. Moreover, when starting the ChorLean executable you have to decide which specific role out of the list of possible roles you are. But how would you even know which roles are already taken? 
 
 We found one very hacky solution for this problem. By defining an arbitrary limit how many chatters can connect at the same time, we were able to define the roles like in the following listing. For this example we limited the amount of concurrent chatters to 4, but we could have selected a higher limit:
 \begin{lstlisting}
@@ -330,29 +350,26 @@ Another advantage of \chorlangs{} is that it is usually possible to easily compo
  further understand the context of \chorlangs{} and to see which alternatives exist 
 
 
-\section{Show why not possible to add session types to ChorLean (first write session types)}
-
-
 
 \section{Proving Deadlock Freedom}
-An open task of ChorLean is to proof that it is free of deadlocks. The authors of ChorLean already sketched a proof but a full proof could act as full convincement that dependent types and Lean are viable to solve real world distributed software problems. [There are multiple possibilities.]
-    \subsection{cgraphs}
-    Thiemann\cite{thiemann2023intrinsicallytypedsessionscallbacks} suggested that it could be proven using interaction trees\cite{10.1145/3371119}. We investigated this and found cgraphs\cite{jacobs2021connectivity} which sounded promising. Unfortunately it is written in the programming language Coq which we are not exactly familiar with it. Furthermore, it turns out that a simple example proof using cgraphs is 1500 lines of code long and consists of \emph{very} dense code. Other\cite{jacobs2021connectivity, 10.1145/3371119, 10.1145/3632889} possibilities turned out to have similar problems.
+An open task of ChorLean is to proof that it is free of deadlocks. The authors of ChorLean already sketched a proof but a full proof could act as full convincement that dependent types and Lean are viable to solve real world distributed software problems.
 
-\chapter{Compare multiple \chorlangs{} with examples}
-Having found out that session types and choreographic programming are incompatible \todo{Have we?} our goal shifted specifically to choreographic programming languages. ChorLean is very advanced because it uses dependent types to guarantee deadlock freedom. Nonetheless, much can be learned by investigating other choreographic languages with vastly different implementations and goals. For example Klor's\cite{klor} main goal is ease of use and pragmatism. They sacrifice rigor but try to be more appealing to the industry. Inspecting multiple \chorlangs{} to find a useful influence for ChorLean was another goal of ours.
+Thiemann\cite{thiemann2023intrinsicallytypedsessionscallbacks} suggested that it could be proven using interaction trees\cite{10.1145/3371119}. We investigated this and found cgraphs\cite{jacobs2021connectivity} which sounded promising. Unfortunately it is written in the programming language Coq which we are not exactly familiar with it. Furthermore, it turns out that a simple example proof using cgraphs is 1500 lines of code long and consists of \emph{very} dense code. Other\cite{jacobs2021connectivity, 10.1145/3371119, 10.1145/3632889} possibilities turned out to have similar problems.
+
+\IMRADlabel{results}
+\chapter{Other \chorlangs{}}
+Having found out that session types and choreographic programming are incompatible our goal shifted specifically to choreographic programming languages. ChorLean is very advanced because it uses dependent types to guarantee deadlock freedom. Nonetheless, much can be learned by investigating other choreographic languages with vastly different implementations and goals. For example Klor's\cite{klor} main goal is ease of use and pragmatism. They sacrifice rigor but try to be more appealing to the industry. Inspecting multiple \chorlangs{} to find a useful influence for ChorLean was another goal of ours.
 
 By comparing multiple \chorlangs{} we can further appreciate features or unique quirks of ChorLean but could also find disadvantages. Before comparing it with multiple other languages it was not trivially clear to us why authors of other \chorlangs{} chose their specific implementation. At first look it seemed to us that dependent types are superior because of more power. Let us inspect if we can learn about hard tradeoffs or maybe some also some elegant inspirations to make ChorLean better. We implemented similar smaller example programs in multiple \chorlangs{} to have baseline to compare them with each other.  
 
 \section{Klor}
-\subsection{Explain macros}
 ChorLean uses the powerful type system of Lean to implement its static guarantees and uses pure functional programming to make errors less likely. These features do come at a cost though. The language is complicated and one always has to think about conforming to strict types and sometimes one even has to provide proofs for facts which are clearly true in the head of the programmer.
 
-In our opinion this added complexity hinders mainstream acceptance. For the usual programmer the added guarantees are not enough reason to get out of their comfort zone and to learn those whole new concepts. Even for the mathematically inclined programmer there is also glaring issue with ChorLean specifically: Even though it seems to be an elegant solution we do not in fact have formal proof to back it up. Another strategy in the complete opposite direction would be Klor \todocite{}. 
+In our opinion this added complexity hinders mainstream acceptance. For the usual programmer the added guarantees are not enough reason to get out of their comfort zone and to learn those whole new concepts. Even for the mathematically inclined programmer there is also glaring issue with ChorLean specifically: Even though it seems to be an elegant solution we do not in fact have formal proof to back it up. Another strategy in the complete opposite direction would be Klor\cite{klor}. 
 
-Klor is a \chorlang{} implemented in Clojure. Clojure is part of a bigger family of programming languages called Lisps\cite{10.1145/367177.367199, dagand2025lisp}. One could call Lisps the antithesis to pure functional programming languages with dependent types like Lean.
+Klor is a \chorlang{} implemented in Clojure. Clojure is part of a bigger family of programming languages called Lisps\cite{dagand2025lisp}. One could call Lisps the antithesis to pure functional programming languages with dependent types like Lean.
 
-The first lisp was developed by John McCarthy in 1960 \todocite{first Lisp paper} which started a family of similar languages but the concepts are usually the same. The main premise of Lisp is that every program can be represented by a very simple syntax. Every program and therefore every expression is just a simple linked list with symbols as data in each cell. At first glance a more simple syntax seems nonessential and can even seem unreadable for the untrained eye because of many explicit parentheses.
+The first lisp was developed by John McCarthy in 1960\cite{10.1145/367177.367199} which started a family of similar languages but the concepts are usually the same. The main premise of Lisp is that every program can be represented by a very simple syntax. Every program and therefore every expression is just a simple linked list with symbols as data in each cell. At first glance a more simple syntax seems nonessential and can even seem unreadable for the untrained eye because of many explicit parentheses.
 
 These extremely limited syntactic forms have a big advantage. Writing code and values uses the same syntax because data is also based on linked lists in Lisp. One thing we can easily do with data is modify it. Every programmer can trivially take a list apart, rearrange it without much mental overhead. 
 
@@ -364,91 +381,25 @@ In comparison to Lean, Lisps are usually dynamically typed and support multiple 
 
 Lean also has macros, but we have not explored them further. In our opinion, because the elegant design of Klor is very promising it could be an interesting idea to inspect how macros could be used to implement a more simple syntax for ChorLean which would reduce some boilerplate or even maybe allow something like more dynamically selecting the executor role.
 
-
-
-\subsection{Type checking with macros}
-Type checking with macros makes it possible to have custom error messages. In Lean, we profit from a rigorous type system which is provably correct. The disadvantage because of its generality is that we have to make due with obscure error messages. We know that something is wrong with our implementation but knowing what is wrong is another entire task in itself. If we instead write our (comparatively very limited) type system by ourselves, we can write custom error messages. For example ``Role X is required here, but you provided Y'' would be very clear and uses domain language to communicate the error. With our domain being choreographies in this example. Lean does not know of our domain and therefore can only provide general type errors: \todo{add bad Lean example} 
+Type checking with macros makes it possible to have custom error messages. In Lean, we profit from a rigorous type system which is provably correct. The disadvantage because of its generality is that we have to make due with obscure error messages. We know that something is wrong with our implementation but knowing what is wrong is another entire task in itself. If we instead write our (comparatively very limited) type system by ourselves, we can write custom error messages. For example ``Role X is required here, but you provided Y'' would be very clear and uses domain language to communicate the error. With our domain being choreographies in this example. Lean does not know of our domain and therefore can only provide general type errors.
 
 Also worth mentioning is that almost all language features can be used completely seamlessly as usual. When using type systems for this task, you always end up with data which has some complicated type. This data then can't be simply used by some pre-existing functions. You usually have to at least wrap/unpack your data manually or use monads.
-
-Not to say. At least it is able to distinguish. I can makejdk 
-\section{Choral}
-\section{Pirouette}
-\section{Chorus}
-
-%\begin{lstlisting}
-%impl Choreography for RockPaperScissorsChoreography {
-%    type L = LocationSet!(PlayerX, PlayerO);
-%    fn run(self, op: &impl ChoreoOp<Self::L>) -> () {
-%        let hand_x = op.locally(PlayerX, |un| {
-%            let mut hand_input = String::new();
-%            println!("Player X: Enter your hand:");
-%            std::io::stdin().read_line(&mut hand_input).unwrap();
-%            return hand_input;
-%        });
-%        let mut hand_x_shared = op.broadcast(PlayerX, hand_x);
-%
-%        let winner = op.locally(PlayerO, |un| {
-%            let mut hand_input = String::new();
-%            println!("Player O: Enter your hand:");
-%            std::io::stdin().read_line(&mut hand_input).unwrap();
-%
-%            println!("{}", hand_input);
-%            println!("{}", hand_x_shared);
-%            println!("{}", hand_input.trim() == "rock");
-%            println!("{}", hand_x_shared.trim() == "rock");
-%
-%            let winner = decideWinner(hand_input, hand_x_shared)
-%
-%            };
-%
-%            return winner;
-%        });
-%        let mut winner_shared = op.broadcast(PlayerO, winner);
-%
-%        op.locally(PlayerX, |un| {
-%            match winner_shared {
-%                Winner::X => println!("You win!"),
-%                Winner::O => println!("You loose!"),
-%                Winner::Draw => println!("Draw!"),
-%                Winner::Fail => println!("Fail!"),
-%            };
-%        });
-%
-%        op.locally(PlayerO, |un| {
-%            match winner_shared {
-%                Winner::X => println!("You loose!"),
-%                Winner::O => println!("You win!"),
-%                Winner::Draw => println!("Draw!"),
-%                Winner::Fail => println!("Fail!"),
-%            };
-%        });
-%
-%    }
-%}
-%\end{lstlisting}
-
-
-
 
 
 
 \section{MulitChor}
-\section{\lambdax{}}
-\subsection{Explain lambda calculus}
-\subsection{\lambdax{}}
+\section{Mechanization of \lambdax{}}
+
 As it turned out, specifically \lambdax{}\cite{10.1145/3747538} piqued our interest. It is a very recent attempt to take the (among researchers) widely established features and semantics of choreographic programming languages and to break them down to their cores. \lambdax{} simplifies choreographic languages to a relatively simple set of rules with the lambda calculus as its base. Furthermore, they even provided a full mathematical proof for its deadlock-freedom. This is a major feat in of itself. Such a proof is cumbersome and has to be done manually and for each \chorlang{} individually. Because of this, many only provide a proof sketch or  omit the proof for their language entirely. Such a proof is also missing from ChorLean. \lambdax{} was specifically designed to be a basis for other languages. If we could translate ChorLean into the basic building blocks of \lambdax{} we would get a proof for free. Exactly this was one of the goals of \lambdax{}. The only missing part of \lambdax{} is that it is missing an implementation. The theoretical work was done rigorously but there exists no implementation. Providing an implementation of \lambdax{} using Lean4 (which is the same language ChorLean uses) was therefore another goal of ours.
 
-A key insight of \lambdax{} is the semantics which all \chorlangs{} follow. That is, they are neither strict nor lazy. According to \todocite{} \lambdax{} this seems to be the main reason why no one could find a simple core set of rules for a choreographic lambda calculus. Chor$\lambda$ had found a set of working rules but \lambdax{} could reduce the number significantly.
+A key insight of \lambdax{} is the semantics which all \chorlangs{} follow. That is, they are neither strict nor lazy. According to Plyukhin et al.\cite{10.1145/3747538} \lambdax{} this seems to be the main reason why no one could find a simple core set of rules for a choreographic lambda calculus. Chor$\lambda$ had found a set of working rules but \lambdax{} could reduce the number significantly.
 
-A major feat of \lambdax{} is its simplicity. By developing the language from the ground up with a fresh perspective and using different abstractions \lambdax{} found out that multiple rules used by \todocite Chor$\lambda$ were in fact unnecessary because they could be replaced by other rules. They even found out that Chor$\lambda$ was missing some rules. They are very specific and rare cases but nonetheless it is a sign that \lambdax{} uses a very structured and sensible approach if they can find that so easily.
+A major feat of \lambdax{} is its simplicity. By developing the language from the ground up with a fresh perspective and using different abstractions \lambdax{} found out that multiple rules used by Chor$\lambda$\cite{cruz-filipe2022functional} were in fact unnecessary because they could be replaced by other rules. They even found out that Chor$\lambda$ was missing some rules. They are very specific and rare cases but nonetheless it is a sign that \lambdax{} uses a very structured and sensible approach if they can find that so easily.
 
  
-
-\subsection{Implementation}
 In this section we will give an overview over our mechanization (or implementation) of \lambdax{}. As far as we can tell, there currently does not exist any mechanization of \lambdax{}.
 
-First we have to define some auxiliary types. That is \lstinline{HList} where the ``H'' stands for homogenous \todocite{Code from lean docs}:
+First we have to define some auxiliary types. That is \lstinline{HList} where the ``H'' stands for homogenous. This is an example taken from the official Lean language website\cite{hlist}:
 \begin{lstlisting}[mathescape]
 inductive HList {$\alpha$ : Type v} ($\beta$ : $\alpha$ -> Type u) : List $\alpha$ -> Type (max u v)
 | nil : HList $\beta$ []
@@ -625,12 +576,69 @@ def testNetwork : NNetwork [] :=
   [("a", NProcess.NValueExpr (NValue.NUnit))]
 \end{lstlisting}
 
+%\section{Choral}
+%\section{Pirouette}
+%\section{Chorus}
 
-\todo{say that opportunity for further dev}
-
-\chapter{Evaluation}
+%\begin{lstlisting}
+%impl Choreography for RockPaperScissorsChoreography {
+%    type L = LocationSet!(PlayerX, PlayerO);
+%    fn run(self, op: &impl ChoreoOp<Self::L>) -> () {
+%        let hand_x = op.locally(PlayerX, |un| {
+%            let mut hand_input = String::new();
+%            println!("Player X: Enter your hand:");
+%            std::io::stdin().read_line(&mut hand_input).unwrap();
+%            return hand_input;
+%        });
+%        let mut hand_x_shared = op.broadcast(PlayerX, hand_x);
+%
+%        let winner = op.locally(PlayerO, |un| {
+%            let mut hand_input = String::new();
+%            println!("Player O: Enter your hand:");
+%            std::io::stdin().read_line(&mut hand_input).unwrap();
+%
+%            println!("{}", hand_input);
+%            println!("{}", hand_x_shared);
+%            println!("{}", hand_input.trim() == "rock");
+%            println!("{}", hand_x_shared.trim() == "rock");
+%
+%            let winner = decideWinner(hand_input, hand_x_shared)
+%
+%            };
+%
+%            return winner;
+%        });
+%        let mut winner_shared = op.broadcast(PlayerO, winner);
+%
+%        op.locally(PlayerX, |un| {
+%            match winner_shared {
+%                Winner::X => println!("You win!"),
+%                Winner::O => println!("You loose!"),
+%                Winner::Draw => println!("Draw!"),
+%                Winner::Fail => println!("Fail!"),
+%            };
+%        });
+%
+%        op.locally(PlayerO, |un| {
+%            match winner_shared {
+%                Winner::X => println!("You loose!"),
+%                Winner::O => println!("You win!"),
+%                Winner::Draw => println!("Draw!"),
+%                Winner::Fail => println!("Fail!"),
+%            };
+%        });
+%
+%    }
+%}
+%\end{lstlisting}
 
 \chapter{Conclusion}
+\section{Evaluation}
+Going in at this work we knew that the topics we wanted to research were bleeding edge and use very high-level programming languages and concepts. But the challenges were even higher than we assumed. A big reason for this was that to combine multiple high complexity topics we had to first invest much time into learning the single topics first. After learning about each topic in a vacuum we often learned that combining those two specific topics was either very hard or would take an unreasonable amount of time. Therefore, we had to shift focus multiple times. 
+
+For example from combining session types with ChorLean to extending ChorLean with features, to comparing ChorLean with other \chorlangs{} to the mechanization of a full choreographic lambda calculus. In the end we think that by doing this work we learned about a big chunk of the research landscape surrounding distributed programming. Because we learned so much, we hope that readers of this work can also learn about this exciting research subject. We hope that we inspire some readers to either continue with a broad experimental analysis of this subject like we did or take some specific we found out and turn it into a very concentrated research journey.
+
+\IMRADlabel{discussion}
 \section{Future Work}
 Future work could include looking further into the differences and similarities between multitier programming languages (e.g.\ ScalaLoci) and \chorlangs{} (e.g.\ ChorLean). There are multiple open questions if specific problems are fundamentally unsolvable or if limitations are based on specific implementations. For example, one could try to implement interesting topologies with a \chorlang{} by adding quantifiers and quantifying over roles which could proof that topology definitions are also possible with \chorlangs{} and not only multitier languages.
 
@@ -644,8 +652,12 @@ Even though we think that session types are not compatible with \chorlangs{}, on
 
 In this work we have shown our experience with the complexity and sometimes even impossibility of some goals. Therefore, further work can learn from our journey by having a better understanding of which research directions are feasible and which are not (for a specific time pensum). For example combining session types and \chorlangs{} seems to us to be impossible or at least unfeasible. Proving deadlock freedom of ChorLean turns out to be a huge task when using usual proof techniques. 
 
-\section{Related Work (similar stuff to my own thesis)}
-We compared multiple \chorlangs{} and tried to improve them by combining knowledge of them. \lambdax{} \todocite{} also looked at multiple existing \chorlangs to improve them by designing a common denominator.
+\section{Related Work}
+We compared multiple \chorlangs{} and tried to improve them by combining knowledge of them. We cared about seeing multiple distinct views of every problem and tried to combine the knowledge of seemingly distinct implementations/research. \lambdax{}\cite{10.1145/3747538} also looked at multiple existing \chorlangs to improve them by designing a common denominator.
+
+We compared multiple distinct paradigms like \chorlangs{}, multitier programming and session types. Giallorenzo et al.\cite{giallorenzo2021multiparty} worked specifically on the pair of multitier programming and \chorlangs{}.
+
+By focusing on using Lean to implement most of our code, for example \lambdax{} we tried to have more secure systems with better static guarantees. For example Thiemann\cite{thiemann2023intrinsicallytypedsessionscallbacks} does focus on provable communication guarantees by researching session types on a theoretical level.  
 
 \printbibliography
 
