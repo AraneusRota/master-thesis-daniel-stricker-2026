@@ -170,8 +170,8 @@
 %It is part of TUDa-CI, which is the official template bundle of TU Darmstadt. The original version was inspired by the \enquote{tuddesign} bundle by C.~v.~Loewenich and J.~Werner.
 %For more information on class options and usage have a look at the documentation \cite{tuda-ci}.
 
-\abstract{Abstract}
-In this work we explore programming languages and their features in the context of distributed programming. We first explore session types which promise to proof correct communication between peers. Another paradigm which promises a similar feat is choreographic programming. We inspect ChorLean, a \chorlang{} which uses a dependent type system to add even more guarantees than other \chorlangs{}. We try to extend it with more features and trying to prove its deadlock freedom. We explore the fundamental differences between \chorlangs{} and multitier programming. Furthermore we look into which alternative \chorlangs{} exist and we find an interesting language \lambdax{} which promises to build a common ground for all state of the art \chorlangs{}. The only missing piece: A mechanization, which we try to implement and to even extend it using a dependent type system.  
+\abstract{In this work we explore programming languages and their features in the context of distributed programming. We first explore session types which promise to proof correct communication between peers. Another paradigm which promises a similar feat is choreographic programming. We inspect ChorLean, a \chorlang{} which uses a dependent type system to add even more guarantees than other \chorlangs{}. We try to extend it with more features and trying to prove its deadlock freedom. We explore the fundamental differences between \chorlangs{} and multitier programming. Furthermore we look into which alternative \chorlangs{} exist and we find an interesting language \lambdax{} which promises to build a common ground for all state of the art \chorlangs{}. The only missing piece: A mechanization, which we try to implement and to even extend it using a dependent type system.}
+
 
 \IMRADlabel{introduction}
 \chapter{Introduction}
@@ -385,9 +385,20 @@ Type checking with macros makes it possible to have custom error messages. In Le
 
 Also worth mentioning is that almost all language features can be used completely seamlessly as usual. When using type systems for this task, you always end up with data which has some complicated type. This data then can't be simply used by some pre-existing functions. You usually have to at least wrap/unpack your data manually or use monads.
 
+Let us look at an example:
+\begin{lstlisting}
+(defchor rps-start [A B] (-> #{A B}) []
+  (let [a (A (string->hand (read-line)))
+        b (B (string->hand (read-line)))
+        winner (A (select-winner [a (B->A b)]))]
+    (A (prn "Winner:" winner))))
+\end{lstlisting}
+We define a choroegraphy by calling \lstinline{defchor} (line 1) and providing the types. We say that \lstinline{A} and \lstinline{B} are possible communication partners. In line 1 we also define that this choreography returns a value which is located at both A and B denoted by the \lstinline{#} with curly braces which denote a set in Clojure. Note that the location is typed (and statically checked by a macro) but the actual value stays dynamic because Clojure is dynamic. 
 
+In lines 2 we read the input from the console of \lstinline{A}, convert the string into a hand enum and assign it to variable \lstinline{a}. The \lstinline{A} in this line is necessary to tell the compiler where to execute the functions, in this case at \lstinline{A}. \lstinline{a} is therefore only located at \lstinline{A}. This is analogous for line 3 and \lstinline{B}.
 
-\section{MulitChor}
+The interesting part about line 4 is \lstinline{(B->A b)}. There we can see the interesting syntax sugar a macro implementation can give us. The macro detects that \lstinline{A} and \lstinline{B} are possible roles and allows this syntax with a arrow to send a value from one peer to another. After printing the result (here only at \lstinline{A}) we are finished. 
+
 \section{Mechanization of \lambdax{}}
 
 As it turned out, specifically \lambdax{}\cite{10.1145/3747538} piqued our interest. It is a very recent attempt to take the (among researchers) widely established features and semantics of choreographic programming languages and to break them down to their cores. \lambdax{} simplifies choreographic languages to a relatively simple set of rules with the lambda calculus as its base. Furthermore, they even provided a full mathematical proof for its deadlock-freedom. This is a major feat in of itself. Such a proof is cumbersome and has to be done manually and for each \chorlang{} individually. Because of this, many only provide a proof sketch or  omit the proof for their language entirely. Such a proof is also missing from ChorLean. \lambdax{} was specifically designed to be a basis for other languages. If we could translate ChorLean into the basic building blocks of \lambdax{} we would get a proof for free. Exactly this was one of the goals of \lambdax{}. The only missing part of \lambdax{} is that it is missing an implementation. The theoretical work was done rigorously but there exists no implementation. Providing an implementation of \lambdax{} using Lean4 (which is the same language ChorLean uses) was therefore another goal of ours.
@@ -548,89 +559,86 @@ inductive NValue : (processes : List NProcessName) -> (varTypes : List NType) ->
 \end{lstlisting}
 
 
+\section{MultiChor}
+\lstinline{MultiChor}\cite{bates2024multichorcensuspolymorphicchoreographic} is a \chorlang{} implemented with Haskell, another purel functional programming language. Let us look at this example:
+\begin{lstlisting}
+data Winner = Alpha | Beta | Draw | Fail deriving (Eq, Show, Read)
 
+choreography :: Choreo '["alpha", "beta"] (CLI m) ()
+choreography = do
+  let alpha :: Member "alpha" '["alpha", "beta"] = listedFirst
+      beta  :: Member "beta"  '["alpha", "beta"] = listedSecond
+  a <- locally alpha \_ -> getInput @String "Enter hand:"
+  a' <- (alpha, (singleton @"alpha", a)) ~> beta @@ nobody
+  b <- locally beta \_ -> getInput @String "Enter hand:"
+  b' <- (beta, (singleton @"beta", b)) ~> alpha @@ nobody
 
+  winner <- locally alpha \un ->
+    pure
+      if (un singleton a) == (un singleton b') then "Draw"
+      else if ...
 
-\begin{lstlisting}[mathescape]
-def nProcedures
-  (procedure : NProcedureName) :
-  (substitutes : Vector NProcessName procedure.argumentCount) ->
-  (substitutes.toList $\subseteq$ processes) ->
-  NProcess processes varTypes procedure.type :=
-    fun substitutes => match procedure with
-      | .f => fun h =>
-        NProcess.NValueExpr (NValue.NConst "a")
-      | .g => fun h =>
-        let n := substitutes.head
-        NProcess.NValueExpr
-          (NValue.NSend n (by
-            have h' : n $\in$ substitutes.toList := by simp; exact Vector.mem_of_getElem rfl
-            have h'' := h h'
-            exact h''))
-      | .h => fun h => NProcess.NValueExpr (NValue.NConst 1)
-
-
-abbrev NNetwork processes :=
-  List (NProcessName $\times$ NProcess processes [] NType.unit)
-def testNetwork : NNetwork [] :=
-  [("a", NProcess.NValueExpr (NValue.NUnit))]
+  locally_ alpha \un -> putOutput "Winner:" $ winner
+  locally_ beta \un -> putOutput "Winner:" $ winner
 \end{lstlisting}
+In lines 7--8 we read the input of peer \lstinline{alpha}, save it in \lstinline{a} and share it to \lstinline{beta} and saving it in \lstinline{a'}.
 
-%\section{Choral}
-%\section{Pirouette}
-%\section{Chorus}
+In lines 12--15, \lstinline{alpha} locally decides the winner. Note that we have to unpack the values with \lstinline{un} here like in ChorLean. Then we just print the winner locally each at \lstinline{alpha} and \lstinline{beta}.
 
-%\begin{lstlisting}
-%impl Choreography for RockPaperScissorsChoreography {
-%    type L = LocationSet!(PlayerX, PlayerO);
-%    fn run(self, op: &impl ChoreoOp<Self::L>) -> () {
-%        let hand_x = op.locally(PlayerX, |un| {
-%            let mut hand_input = String::new();
-%            println!("Player X: Enter your hand:");
-%            std::io::stdin().read_line(&mut hand_input).unwrap();
-%            return hand_input;
-%        });
-%        let mut hand_x_shared = op.broadcast(PlayerX, hand_x);
-%
-%        let winner = op.locally(PlayerO, |un| {
-%            let mut hand_input = String::new();
-%            println!("Player O: Enter your hand:");
-%            std::io::stdin().read_line(&mut hand_input).unwrap();
-%
-%            println!("{}", hand_input);
-%            println!("{}", hand_x_shared);
-%            println!("{}", hand_input.trim() == "rock");
-%            println!("{}", hand_x_shared.trim() == "rock");
-%
-%            let winner = decideWinner(hand_input, hand_x_shared)
-%
-%            };
-%
-%            return winner;
-%        });
-%        let mut winner_shared = op.broadcast(PlayerO, winner);
-%
-%        op.locally(PlayerX, |un| {
-%            match winner_shared {
-%                Winner::X => println!("You win!"),
-%                Winner::O => println!("You loose!"),
-%                Winner::Draw => println!("Draw!"),
-%                Winner::Fail => println!("Fail!"),
-%            };
-%        });
-%
-%        op.locally(PlayerO, |un| {
-%            match winner_shared {
-%                Winner::X => println!("You loose!"),
-%                Winner::O => println!("You win!"),
-%                Winner::Draw => println!("Draw!"),
-%                Winner::Fail => println!("Fail!"),
-%            };
-%        });
-%
-%    }
-%}
-%\end{lstlisting}
+\section{ChoRus}
+We also have an implementation with \lstinline{ChoRus}\cite{kashiwa2023portableefficientpracticallibrarylevel} using Rust but we will leave out further explanation because nothing particularly interesting happens here: 
+
+\begin{lstlisting}
+impl Choreography for RockPaperScissorsChoreography {
+    type L = LocationSet!(PlayerX, PlayerO);
+    fn run(self, op: &impl ChoreoOp<Self::L>) -> () {
+        let hand_x = op.locally(PlayerX, |un| {
+            let mut hand_input = String::new();
+            println!("Player X: Enter your hand:");
+            std::io::stdin().read_line(&mut hand_input).unwrap();
+            return hand_input;
+        });
+        let mut hand_x_shared = op.broadcast(PlayerX, hand_x);
+
+        let winner = op.locally(PlayerO, |un| {
+            let mut hand_input = String::new();
+            println!("Player O: Enter your hand:");
+            std::io::stdin().read_line(&mut hand_input).unwrap();
+
+            println!("{}", hand_input);
+            println!("{}", hand_x_shared);
+            println!("{}", hand_input.trim() == "rock");
+            println!("{}", hand_x_shared.trim() == "rock");
+
+            let winner = decideWinner(hand_input, hand_x_shared)
+
+            };
+
+            return winner;
+        });
+        let mut winner_shared = op.broadcast(PlayerO, winner);
+
+        op.locally(PlayerX, |un| {
+            match winner_shared {
+                Winner::X => println!("You win!"),
+                Winner::O => println!("You loose!"),
+                Winner::Draw => println!("Draw!"),
+                Winner::Fail => println!("Fail!"),
+            };
+        });
+
+        op.locally(PlayerO, |un| {
+            match winner_shared {
+                Winner::X => println!("You loose!"),
+                Winner::O => println!("You win!"),
+                Winner::Draw => println!("Draw!"),
+                Winner::Fail => println!("Fail!"),
+            };
+        });
+
+    }
+}
+\end{lstlisting}
 
 \chapter{Conclusion}
 \section{Evaluation}
