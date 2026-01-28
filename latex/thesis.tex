@@ -350,10 +350,25 @@ By comparing multiple \chorlangs{} we can further appreciate features or unique 
 
 \section{Klor}
 \subsection{Explain macros}
-ChorLean uses a powerful type system to implement its static guarantees and uses pure functional programming to make errors less likely. 
+ChorLean uses the powerful type system of Lean to implement its static guarantees and uses pure functional programming to make errors less likely. These features do come at a cost though. The language is complicated and one always has to think about conforming to strict types and sometimes one even has to provide proofs for facts which are clearly true in the head of the programmer.
+
+In our opinion this added complexity hinders mainstream acceptance. For the usual programmer the added guarantees are not enough reason to get out of their comfort zone and to learn those whole new concepts. Even for the mathematically inclined programmer there is also glaring issue with ChorLean specifically: Even though it seems to be an elegant solution we do not in fact have formal proof to back it up. Another strategy in the complete opposite direction would be Klor \todocite{}. 
+
+Klor is a \chorlang{} implemented in Clojure. Clojure is part of a bigger family of programming languages called Lisps. One could call Lisps the antithesis to pure functional programming languages with dependent types like Lean.
+
+The first lisp was developed by John McCarthy in 1960 \todocite{first Lisp paper} which started a family of similar languages but the concepts are usually the same. The main premise of Lisp is that every program can be represented by a very simple syntax. Every program and therefore every expression is just a simple linked list with symbols as data in each cell. At first glance a more simple syntax seems nonessential and can even seem unreadable for the untrained eye because of many explicit parentheses.
+
+These extremely limited syntactic forms have a big advantage. Writing code and values uses the same syntax because data is also based on linked lists in Lisp. One thing we can easily do with data is modify it. Every programmer can trivially take a list apart, rearrange it without much mental overhead. 
+
+The key insight here is that every code expression is easily modifiable just like normal linked lists. This leads to a trivial style of writing macros. In other languages like C you have to use complicated pre-processors which are in turn fully turing complete second language you have to understand every intricate detail about. 
+
+Macros are unlike in other languages not an afterthought but an essential tool to implement features. Usually a lisps consist of a small set of language primitives and often more interesting features are implemented using macros.
+
+In comparison to Lean, Lisps are usually dynamically typed and support multiple programming paradigms equally, like functional programming, object-oriented programming or procedural programming. In fact, Clojure is a rather modern Lisp and goes a more opinionated way. It has a big focus and strongly prefers functional programming and immutable data structures.  
+
+Lean also has macros, but we have not explored them further. In our opinion, because the elegant design of Klor is very promising it could be an interesting idea to inspect how macros could be used to implement a more simple syntax for ChorLean which would reduce some boilerplate or even maybe allow something like more dynamically selecting the executor role.
 
 
-Lean also has macros but have not explored them. Because of the elegant design of Klor it could be an interesting idea to inspect how macros could be used to implement a more simple syntax for ChorLean which would reduce some boilerplate or even maybe allow something like      
 
 \subsection{Type checking with macros}
 Type checking with macros makes it possible to have custom error messages. In Lean, we profit from a rigorous type system which is provably correct. The disadvantage because of its generality is that we have to make due with obscure error messages. We know that something is wrong with our implementation but knowing what is wrong is another entire task in itself. If we instead write our (comparatively very limited) type system by ourselves, we can write custom error messages. For example ``Role X is required here, but you provided Y'' would be very clear and uses domain language to communicate the error. With our domain being choreographies in this example. Lean does not know of our domain and therefore can only provide general type errors: \todo{add bad Lean example} 
