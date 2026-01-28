@@ -3,6 +3,7 @@
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
     <content url="file://$MODULE_DIR$" />
+    <orderEntry type="jdk" jdkName="lean4 v4.18.0-rc1" jdkType="Lean4" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>
